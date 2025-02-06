@@ -112,7 +112,8 @@ void* loop_to_y_thread(void* arg) {
     // printf("Thread ID: %lu\tStart: %lu\tEnd: %lu\n", pthread_self(), data->start, data->end);
 
     for (uint64_t i=data->start; i<data->end; i+=2) {
-        if (find_prime_seq(i))
+        // if (find_prime_seq(i))
+        if (find_prime_avx(i))
             continue;
         // printf("Thread ID: %lu\tNumber: %lu\n", pthread_self(), i);
         local_primes[local_count++] = i;
@@ -181,24 +182,24 @@ int main() {
         primes[0] = 2;
         n++;
         if (y!=2) {
-            n = loop_to_y_seq(primes, y);
-            // for (int i = 0; i < x; i++) {
-            //     thread_data[i].stack_size = stack_size;
-            //     thread_data[i].start = partitions[i];
-            //     thread_data[i].end = partitions[i+1];
-            //     thread_data[i].primes = primes;
-            //     thread_data[i].count = &n;
-            //     thread_data[i].lock = &lock;
-            //     thread_data[i].id;
+            // n = loop_to_y_seq(primes, y);
+            for (int i = 0; i < x; i++) {
+                thread_data[i].stack_size = stack_size;
+                thread_data[i].start = partitions[i];
+                thread_data[i].end = partitions[i+1];
+                thread_data[i].primes = primes;
+                thread_data[i].count = &n;
+                thread_data[i].lock = &lock;
+                thread_data[i].id;
 
-            //     pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
-            // }
+                pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
+            }
         }
     }
     
-    // for (int i = 0; i < x; i++) {
-    //     pthread_join(threads[i], NULL);
-    // }
+    for (int i = 0; i < x; i++) {
+        pthread_join(threads[i], NULL);
+    }
 
     end = clock();
     
