@@ -1,1 +1,4 @@
-x5y7
+threads=2
+ceiling=10000000
+mode=0
+avx=1

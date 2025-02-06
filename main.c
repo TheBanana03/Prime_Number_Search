@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern void find_prime(uint64_t i, bool* result, float* v_256);
 
@@ -17,6 +18,29 @@ typedef struct {
     uint64_t* count;
     pthread_mutex_t* lock;
 } ThreadData;
+
+void read_config(uint64_t* x, uint64_t* y, uint64_t* m, uint64_t* a) {
+    FILE* file = fopen("config.txt", "r");
+    if (!file) {
+        perror("Failed to open config file");
+        exit(EXIT_FAILURE);
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        if (strncmp(line, "threads=", 8) == 0) {
+            *x = strtoul(line + 8, NULL, 10);
+        } else if (strncmp(line, "ceiling=", 8) == 0) {
+            *y = strtoul(line + 8, NULL, 10);
+        } else if (strncmp(line, "mode=", 5) == 0) {
+            *m = strtoul(line + 5, NULL, 10);
+        } else if (strncmp(line, "avx=", 4) == 0) {
+            *a = strtoul(line + 4, NULL, 10);
+        }
+    }
+
+    fclose(file);
+}
 
 void print_primes(uint64_t* primes, uint64_t y) {
     printf("\n%lu primes found", y);
@@ -136,8 +160,12 @@ void* loop_to_y_thread(void* arg) {
 }
 
 int main() {
-    uint64_t x = 6;
-    uint64_t y = 10000000;
+    uint64_t x, y, m, a;
+    read_config(&x, &y, &m, &a);
+    if (x%2) {
+        a = 0;
+    }
+
     uint64_t n = 0;
     clock_t start, end;
     double time;
@@ -194,12 +222,12 @@ int main() {
 
                 pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
             }
+
+            for (int i = 0; i < x; i++) {
+                pthread_join(threads[i], NULL);
+                printf("Thread %lu\n", *(thread_data[i].id));
+            }
         }
-    }
-    
-    for (int i = 0; i < x; i++) {
-        pthread_join(threads[i], NULL);
-        printf("Thread %lu\n", *(thread_data[i].id));
     }
 
     end = clock();
