@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <stdlib.h>
 
+extern void find_prime(uint64_t i, bool* result, float* v_256);
+
 typedef struct {
     size_t stack_size;
     uint64_t* id;
@@ -23,6 +25,44 @@ void print_primes(uint64_t* primes, uint64_t y) {
         // printf(", %lu", primes[i]);
     }
     printf("\n");
+}
+
+bool find_prime_avx(uint64_t i) {
+    uint32_t lower = 3;
+    uint32_t upper = lower + (2*7);
+    int u, l;
+    while (upper*upper<=i) {
+        float v_256[8] = {lower, lower+2, lower+4, lower+6, lower+8, lower+10, lower+12, upper};
+        // printf("%d: ", i);
+
+        // uint32_t result[8];
+        // float result[8];
+        bool result;
+
+        find_prime(i, &result, v_256);
+        // if (i == 361) {
+            // printf("%d: ", i);
+            // for (int j = 0; j < 8; j++) {
+                // printf("%d, ", result[j]);
+                // printf("%f, ", result[j]);
+            // }
+            // printf("\n");
+            // printf("%d\n", result);
+        // }
+        if (!result)
+            return true;
+        lower+=16;
+        upper+=16;
+    }
+    if (upper*upper>i) {
+        // printf("%d, ", i);
+        while (lower*lower<=i) {
+            if (!(i%lower))
+                return true;
+            lower+=2;
+        }
+    }
+    return false;
 }
 
 bool find_prime_seq(uint64_t i) {
@@ -47,7 +87,7 @@ uint64_t loop_to_y_seq(uint64_t* primes, uint64_t y) {
     uint64_t n = 1;
     for (uint64_t i=3; i<y; i+=2) {
         // if (find_prime_avx(i))
-        if (find_prime_seq(i))
+        if (find_prime_avx(i))
             continue;
         primes[n] = i;
         n++;
@@ -96,7 +136,7 @@ void* loop_to_y_thread(void* arg) {
 
 int main() {
     uint64_t x = 1;
-    uint64_t y = 100000000;
+    uint64_t y = 10000000;
     uint64_t n = 0;
     clock_t start, end;
     double time;
@@ -141,24 +181,24 @@ int main() {
         primes[0] = 2;
         n++;
         if (y!=2) {
-            // n = loop_to_y_seq(primes, y);
-            for (int i = 0; i < x; i++) {
-                thread_data[i].stack_size = stack_size;
-                thread_data[i].start = partitions[i];
-                thread_data[i].end = partitions[i+1];
-                thread_data[i].primes = primes;
-                thread_data[i].count = &n;
-                thread_data[i].lock = &lock;
-                thread_data[i].id;
+            n = loop_to_y_seq(primes, y);
+            // for (int i = 0; i < x; i++) {
+            //     thread_data[i].stack_size = stack_size;
+            //     thread_data[i].start = partitions[i];
+            //     thread_data[i].end = partitions[i+1];
+            //     thread_data[i].primes = primes;
+            //     thread_data[i].count = &n;
+            //     thread_data[i].lock = &lock;
+            //     thread_data[i].id;
 
-                pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
-            }
+            //     pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
+            // }
         }
     }
     
-    for (int i = 0; i < x; i++) {
-        pthread_join(threads[i], NULL);
-    }
+    // for (int i = 0; i < x; i++) {
+    //     pthread_join(threads[i], NULL);
+    // }
 
     end = clock();
     
