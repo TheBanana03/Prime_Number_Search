@@ -105,12 +105,11 @@ void read_config() {
 }
 
 void print_primes(uint64_t* primes, uint64_t* timestamps, uint64_t* threadids, uint64_t y) {
-    printf("\n%lu primes found\n\n", y);
+    printf("\n\n");
     for (uint64_t i=0; i<y; i++) {
-        // printf(", %lu", primes[i]);
-        printf("Thread %lu:\t%lu\t(Timestamp: %f seconds)\n", threadids[i], primes[i], timestamps[i] / 1e9);
+        printf("Thread %lu:\t%lu\t(Timestamp: %f seconds)\n",
+                threadids[i], primes[i], timestamps[i] / 1e9);
     }
-    printf("\n");
 }
 
 
@@ -164,7 +163,7 @@ void* worker_function(void* arg) {
                 if (p==0) {
                     printf("Thread %lu:\t%d\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), n, ts.tv_sec, ts.tv_nsec);
                 } else if (p==1) {
-                    task->timestamp = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
+                    task->timestamp = ts.tv_sec * 1e9 + ts.tv_nsec;
                     task->threadid = pthread_self();
                 }
                 break;
@@ -316,7 +315,7 @@ void* loop_to_y_thread(void* arg) {
             if (p==0) {
                 printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
             } else if (p==1) {
-                local_times[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
+                local_times[local_count] = ts.tv_sec * 1e9 + ts.tv_nsec;
             }
             local_primes[local_count++] = i;
         }
@@ -328,7 +327,7 @@ void* loop_to_y_thread(void* arg) {
                 clock_gettime(CLOCK_MONOTONIC, &ts);
                 printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
             } else if (p==1) {
-                local_times[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
+                local_times[local_count] = ts.tv_sec * 1e9 + ts.tv_nsec;
             }
             local_primes[local_count++] = i;
         }
@@ -428,7 +427,7 @@ int main() {
         primes[0] = 2;
         if (p==1) {
             clock_gettime(CLOCK_MONOTONIC, &two);
-            timestamps[0] = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
+            timestamps[0] = two.tv_sec * 1e9 + two.tv_nsec;
             threadids[0] = pthread_self();
         }
         n++;
@@ -461,14 +460,18 @@ int main() {
     }
     clock_gettime(CLOCK_MONOTONIC, &end);
 
+    printf("\n%lu primes found\n", n);
     if (primes[0] && p==1)
         print_primes(primes, timestamps, threadids, n);
     printf("\n");
 
     uint64_t elapsed_ns = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
     double elapsed_s = elapsed_ns / 1e9;
+    double start_time = (start.tv_sec * 1e9 + start.tv_nsec) / 1e9;
+    double end_time = (end.tv_sec * 1e9 + end.tv_nsec) / 1e9;
 
-    printf("Execution time: %lu ns (%.2f seconds)\n", elapsed_ns, elapsed_s);
+    printf("Execution time: %luns (%.2fs)\nStart time: %f seconds\t\tEnd time: %f seconds\n",
+            elapsed_ns, elapsed_s, start_time, end_time);
 
     if (m==1)
         free(workers);
