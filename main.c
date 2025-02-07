@@ -30,6 +30,8 @@ typedef struct {
     uint32_t next_divisor;
     bool is_composite;
     pthread_mutex_t lock;
+    uint64_t threadid;
+    uint64_t timestamp;
 } Task;
 
 typedef struct {
@@ -158,9 +160,12 @@ void* worker_function(void* arg) {
             pthread_mutex_unlock(&task->lock);
 
             if (divisor > limit) {
+                clock_gettime(CLOCK_MONOTONIC, &ts);
                 if (p==0) {
-                    clock_gettime(CLOCK_MONOTONIC, &ts);
                     printf("Thread %lu:\t%d\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), n, ts.tv_sec, ts.tv_nsec);
+                } else if (p==1) {
+                    task->timestamp = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
+                    task->threadid = pthread_self();
                 }
                 break;
             }
@@ -188,7 +193,7 @@ void* worker_function(void* arg) {
     return NULL;
 }
 
-uint64_t check_primes(uint32_t end, uint64_t* primes) {
+uint64_t check_primes(uint32_t end, uint64_t* primes, uint64_t* timestamps, uint64_t* threadids) {
     queue.tasks = malloc((end + 1) * sizeof(Task));
     queue.task_count = end + 1;
     queue.next_task = 0;
@@ -213,6 +218,10 @@ uint64_t check_primes(uint32_t end, uint64_t* primes) {
 
     for (int i = 3; i <= end; i += 2) {
         if (!queue.tasks[i].is_composite) {
+            if (p==1) {
+                timestamps[count] = queue.tasks[i].timestamp;
+                threadids[count] = queue.tasks[i].threadid;
+            }
             primes[(count)++] = i;
         }
     }
@@ -430,7 +439,7 @@ int main() {
                     // printf("Thread %lu\n", *(thread_data[i].id));
                 }
             } else {
-                n = check_primes(y, primes);
+                n = check_primes(y, primes, timestamps, threadids);
             }
         }
     }
