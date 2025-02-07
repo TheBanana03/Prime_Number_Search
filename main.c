@@ -275,27 +275,6 @@ bool find_prime_seq(uint64_t i) {
     return false;
 }
 
-uint64_t loop_to_y_seq(uint64_t* primes, uint64_t y) {
-    uint64_t n = 1;
-
-    if (a==1) {
-        for (uint64_t i=3; i<y; i+=2) {
-            if (find_prime_avx(i))
-                continue;
-            primes[n] = i;
-            n++;
-        }
-    } else {
-        for (uint64_t i=3; i<y; i+=2) {
-            if (find_prime_seq(i))
-                continue;
-            primes[n] = i;
-            n++;
-        }
-    }
-    return n;
-}
-
 void* loop_to_y_thread(void* arg) {
     ThreadData* data = (ThreadData*)arg;
     uint64_t local_count = 0;
@@ -335,6 +314,9 @@ void* loop_to_y_thread(void* arg) {
             if (p==0) {
                 clock_gettime(CLOCK_MONOTONIC, &ts);
                 printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
+            } else if (p==1) {
+                data->threadids[local_count] = *(data->id);
+                data->timestamps[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
             }
             local_primes[local_count++] = i;
         }
@@ -426,7 +408,6 @@ int main() {
         primes[0] = 2;
         n++;
         if (y!=2) {
-            // n = loop_to_y_seq(primes, y);
             if (m==0) {
                 for (int i = 0; i < x; i++) {
                     thread_data[i].stack_size = stack_size;
