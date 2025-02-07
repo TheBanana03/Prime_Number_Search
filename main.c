@@ -104,11 +104,11 @@ void read_config() {
     }
 }
 
-void print_primes(uint64_t* primes, uint64_t y) {
-    printf("\n%lu primes found", y);
-    printf("\n%lu", primes[0]);
-    for (uint64_t i=1; i<y; i++) {
+void print_primes(uint64_t* primes, uint64_t* timestamps, uint64_t* threadids, uint64_t y) {
+    printf("\n%lu primes found\n\n", y);
+    for (uint64_t i=0; i<y; i++) {
         // printf(", %lu", primes[i]);
+        printf("Thread %lu:\t%lu\t(Timestamp: %f seconds)\n", threadids[i], primes[i], timestamps[i] / 1e9);
     }
     printf("\n");
 }
@@ -288,6 +288,7 @@ void* loop_to_y_thread(void* arg) {
     ThreadData* data = (ThreadData*)arg;
     uint64_t local_count = 0;
     uint64_t* local_primes;
+    uint64_t* local_times;
     bool heap = false;
     struct timespec ts;
 
@@ -296,8 +297,12 @@ void* loop_to_y_thread(void* arg) {
     
     if ((data->end - data->start) * sizeof(uint64_t) < data->stack_size / 2) {
         local_primes = alloca((data->end - data->start) * sizeof(uint64_t));
+        if (p==1)
+            local_times = alloca((data->end - data->start) * sizeof(uint64_t));
     } else {
         local_primes = malloc((data->end - data->start) * sizeof(uint64_t));
+        if (p==1)
+            local_times = malloc((data->end - data->start) * sizeof(uint64_t));\
         heap = true;
     }
 
@@ -311,8 +316,7 @@ void* loop_to_y_thread(void* arg) {
             if (p==0) {
                 printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
             } else if (p==1) {
-                data->threadids[local_count] = *(data->id);
-                data->timestamps[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
+                local_times[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
             }
             local_primes[local_count++] = i;
         }
@@ -324,8 +328,7 @@ void* loop_to_y_thread(void* arg) {
                 clock_gettime(CLOCK_MONOTONIC, &ts);
                 printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
             } else if (p==1) {
-                data->threadids[local_count] = *(data->id);
-                data->timestamps[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
+                local_times[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
             }
             local_primes[local_count++] = i;
         }
@@ -335,11 +338,19 @@ void* loop_to_y_thread(void* arg) {
     pthread_mutex_lock(data->lock);
     for (uint64_t i = 0; i < local_count; i++) {
         data->primes[*(data->count)] = local_primes[i];
+        if (p==1) {
+            data->threadids[*(data->count)] = *(data->id);
+            data->timestamps[*(data->count)] = local_times[i];
+        }
         (*(data->count))++;
     }
     pthread_mutex_unlock(data->lock);
-    if (heap)
+    if (heap) {
+        if (p==1) {
+            free(local_times);
+        }
         free(local_primes);
+    }
 
     return NULL;
 }
@@ -358,7 +369,7 @@ int main() {
     }
 
     uint64_t n = 0;
-    struct timespec start, end;
+    struct timespec start, end, two;
     double time;
 
     uint64_t* primes = malloc(y * sizeof(uint64_t));
@@ -415,6 +426,11 @@ int main() {
     clock_gettime(CLOCK_MONOTONIC, &start);
     if (y>=2) {
         primes[0] = 2;
+        if (p==1) {
+            clock_gettime(CLOCK_MONOTONIC, &two);
+            timestamps[0] = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
+            threadids[0] = pthread_self();
+        }
         n++;
         if (y!=2) {
             if (m==0) {
@@ -446,7 +462,7 @@ int main() {
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     if (primes[0] && p==1)
-        print_primes(primes, n);
+        print_primes(primes, timestamps, threadids, n);
     printf("\n");
 
     uint64_t elapsed_ns = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
