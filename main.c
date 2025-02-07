@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <math.h>
@@ -6,6 +8,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <alloca.h>
 #include <stdatomic.h>
 
 extern void find_prime(uint64_t i, bool* result, float* v_256);
@@ -37,7 +40,7 @@ typedef struct {
 TaskQueue queue;
 pthread_t* workers = NULL;
 
-uint64_t x, y, m, a, p;
+int64_t x, y, m, a, p;
 
 void read_config() {
     FILE* file = fopen("config.txt", "r");
@@ -46,29 +49,62 @@ void read_config() {
         exit(EXIT_FAILURE);
     }
 
+    bool inputGood = true;
     char line[256];
+
     while (fgets(line, sizeof(line), file)) {
+        // Remove newline character if present
+        line[strcspn(line, "\n")] = 0;
+        char* endptr;
+
         if (strncmp(line, "threads=", 8) == 0) {
-            x = strtoul(line + 8, NULL, 10);
+            x = strtoul(line + 8, &endptr, 10);
+            if (*endptr != '\0' || x <= 0) {  // Ensure it's a valid integer and positive
+                fprintf(stderr, "Invalid value for threads: %s (must be a positive integer)\n", line + 8);
+                inputGood = false;
+            }
         } else if (strncmp(line, "ceiling=", 8) == 0) {
-            y = strtoul(line + 8, NULL, 10);
+            y = strtoul(line + 8, &endptr, 10);
+            if (*endptr != '\0' || y <= 0) {  // Ensure it's a valid integer and positive
+                fprintf(stderr, "Invalid value for ceiling: %s (must be a positive integer)\n", line + 8);
+                inputGood = false;
+            } else if (y > 1000000000) {
+                fprintf(stderr, "Invalid value for ceiling: %s (must be less than or equal to 1,000,000,000)\n", line + 8);
+                inputGood = false;
+            }
         } else if (strncmp(line, "mode=", 5) == 0) {
-            m = strtoul(line + 5, NULL, 10);
+            m = strtoul(line + 5, &endptr, 10);
+            if (*endptr != '\0' || m != 0 && m != 1) {
+                fprintf(stderr, "Invalid value for mode: %s (must be 0 or 1)\n", line + 5);
+                inputGood = false;
+            }
         } else if (strncmp(line, "avx=", 4) == 0) {
-            a = strtoul(line + 4, NULL, 10);
-        } else if (strncmp(line, "print=", 5) == 0) {
-            p = strtoul(line + 5, NULL, 10);
+            a = strtoul(line + 4, &endptr, 10);
+            if (*endptr != '\0' || a != 0 && a != 1) {
+                fprintf(stderr, "Invalid value for avx: %s (must be 0 or 1)\n", line + 4);
+                inputGood = false;
+            }
+        } else if (strncmp(line, "print=", 6) == 0) {
+            p = strtoul(line + 6, &endptr, 10);
+            if (*endptr != '\0' || p != 0 && p != 1) {
+                fprintf(stderr, "Invalid value for print: %s (must be 0 or 1)\n", line + 6);
+                inputGood = false;
+            }
         }
     }
 
     fclose(file);
+
+    if (!inputGood) {
+        exit(EXIT_FAILURE);
+    }
 }
 
 void print_primes(uint64_t* primes, uint64_t y) {
     printf("\n%lu primes found", y);
     printf("\n%lu", primes[0]);
     for (uint64_t i=1; i<y; i++) {
-        // printf(", %lu", primes[i]);
+        printf(", %lu", primes[i]);
     }
     printf("\n");
 }
@@ -76,7 +112,8 @@ void print_primes(uint64_t* primes, uint64_t y) {
 
 
 void* worker_function(void* arg) {
-    float divisors[8];  // AVX divisors
+    float divisors[8];
+    struct timespec ts;
 
     while (1) {
         pthread_mutex_lock(&queue.lock);
@@ -106,35 +143,56 @@ void* worker_function(void* arg) {
         uint32_t divisor;
 
         while (1) {
+            if (task->is_composite)
+                break;
+
             pthread_mutex_lock(&task->lock);
             divisor = task->next_divisor;
-            task->next_divisor += 16;
+            if ((task->next_divisor+16)>y)
+                task->next_divisor=y;
+            else {
+                task->next_divisor+=16;
+            }
             pthread_mutex_unlock(&task->lock);
 
-            if (divisor > limit) break;
+            if (divisor > limit) {
+                if (p==0) {
+                    clock_gettime(CLOCK_MONOTONIC, &ts);
+                    printf("Thread %lu:\t%d\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), n, ts.tv_sec, ts.tv_nsec);
+                }
+                break;
+            }
 
             int count = 0;
             for (int i = 0; i < 8; i++) {
-                if (divisor + (i * 2) > limit) break;
+                if (divisor+(i*2) > limit) break;
                 divisors[i] = (float)(divisor + (i * 2));
                 count++;
             }
-
-            find_prime(n, &task->is_composite, divisors);
-
-            if (task->is_composite) break;
+            
+            if (count==8 && a==1) {
+                find_prime(n, &task->is_composite, divisors);
+                task->is_composite = !(task->is_composite);
+            }
+            else {
+                for (int i = 0; i < count; i++) {
+                    if (!(n%(int)divisors[i])) {
+                        task->is_composite = true;
+                    }
+                }
+            }
         }
     }
     return NULL;
 }
 
-void check_primes(uint32_t end, uint64_t** primes, uint64_t* count) {
+uint64_t check_primes(uint32_t end, uint64_t* primes) {
     queue.tasks = malloc((end + 1) * sizeof(Task));
     queue.task_count = end + 1;
     queue.next_task = 0;
     pthread_mutex_init(&queue.lock, NULL);
 
-    for (int i = 0; i <= end; i++) {
+    for (int i = 3; i <= end; i+=2) {
         queue.tasks[i].number = i;
         queue.tasks[i].is_composite = false;
         queue.tasks[i].next_divisor = 3;
@@ -148,14 +206,12 @@ void check_primes(uint32_t end, uint64_t** primes, uint64_t* count) {
     for (int i = 0; i < x; i++) {
         pthread_join(workers[i], NULL);
     }
-
-    *primes = malloc((end + 1) * sizeof(uint64_t));
-    (*primes)[0] = 2;
-    *count = 1;
+    
+    uint64_t count = 1;
 
     for (int i = 3; i <= end; i += 2) {
         if (!queue.tasks[i].is_composite) {
-            (*primes)[(*count)++] = i;
+            primes[(count)++] = i;
         }
     }
 
@@ -164,6 +220,8 @@ void check_primes(uint32_t end, uint64_t** primes, uint64_t* count) {
     }
     free(queue.tasks);
     pthread_mutex_destroy(&queue.lock);
+
+    return count;
 }
 
 
@@ -186,33 +244,32 @@ bool find_prime_avx(uint64_t i) {
         lower+=16;
         upper+=16;
     }
-    if (upper * upper > i) {
-        if (i % lower == 0) return true;
-        if (i % (lower + 2) == 0) return true;
-        if (i % (lower + 4) == 0) return true;
-        if (i % (lower + 6) == 0) return true;
-        if (i % (lower + 8) == 0) return true;
-        if (i % (lower + 10) == 0) return true;
-        if (i % (lower + 12) == 0) return true;
+    if (upper*upper > i && i != lower) {
+        if (i%lower == 0) return true;
+        if (i == lower+2) return false;
+        if (i%(lower+2) == 0) return true;
+        if (i == lower+4) return false;
+        if (i%(lower+4) == 0) return true;
+        if (i == lower+6) return false;
+        if (i%(lower+6) == 0) return true;
+        if (i == lower+8) return false;
+        if (i%(lower+8) == 0) return true;
+        if (i == lower+10) return false;
+        if (i%(lower+10) == 0) return true;
+        if (i == lower+12) return false;
+        if (i%(lower+12) == 0) return true;
     }
     return false;
 }
 
 bool find_prime_seq(uint64_t i) {
     uint64_t k = 3;
-    // int m = sqrt(i);
     while (k*k<=i) {
-        // if (i>750)
-        // printf("Thread ID: %lu\tNumber: %d\tDivisor: %d\n", pthread_self(), i, k);
         if (!(i%k)) {
             return true;
         }
         k+=2;
     }
-    // for (int k=3; k*k<=i; k+=2) {
-    //     if (!(i%k))
-    //         return true;
-    // }
     return false;
 }
 
@@ -228,7 +285,6 @@ uint64_t loop_to_y_seq(uint64_t* primes, uint64_t y) {
         }
     } else {
         for (uint64_t i=3; i<y; i+=2) {
-            // if (find_prime_avx(i))
             if (find_prime_seq(i))
                 continue;
             primes[n] = i;
@@ -243,6 +299,7 @@ void* loop_to_y_thread(void* arg) {
     uint64_t local_count = 0;
     uint64_t* local_primes;
     bool heap = false;
+    struct timespec ts;
 
     data->id = malloc(sizeof(uint64_t));
     *(data->id) = pthread_self();
@@ -260,13 +317,20 @@ void* loop_to_y_thread(void* arg) {
         for (uint64_t i=data->start; i<data->end; i+=2) {
             if (find_prime_avx(i))
                 continue;
-            // printf("Thread ID: %lu\tNumber: %lu\n", pthread_self(), i);
+            if (p==0) {
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
+            }
             local_primes[local_count++] = i;
         }
     } else {
         for (uint64_t i=data->start; i<data->end; i+=2) {
             if (find_prime_seq(i))
                 continue;
+            if (p==0) {
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
+            }
             local_primes[local_count++] = i;
         }
     }
@@ -278,12 +342,6 @@ void* loop_to_y_thread(void* arg) {
         (*(data->count))++;
     }
     pthread_mutex_unlock(data->lock);
-
-    // printf("Thread %lu", *(data->id));
-    //     if (local_primes[0])
-    //         print_primes(local_primes, local_count);
-    //     printf("\n");
-
     if (heap)
         free(local_primes);
 
@@ -293,7 +351,7 @@ void* loop_to_y_thread(void* arg) {
 int main() {
     read_config();
 
-    if (x%2 || y>11000000)
+    if (y>16000000)
         a = 0;
     if (m==1) {
         workers = malloc(x * sizeof(pthread_t));
@@ -302,20 +360,19 @@ int main() {
             exit(EXIT_FAILURE);
         }
     }
-        
 
     uint64_t n = 0;
-    clock_t start, end;
+    struct timespec start, end;
     double time;
 
-    pthread_t threads[x];
-    ThreadData thread_data[x];
-    pthread_mutex_t lock;
-    pthread_mutex_init(&lock, NULL);
-
     uint64_t* primes = malloc(y * sizeof(uint64_t));
+    uint64_t* timestamps;
+    uint64_t* threadids;
+    if (p==1)  {
+        timestamps = malloc(y * sizeof(uint64_t));
+        threadids = malloc(y * sizeof(uint64_t));
+    }
     uint64_t chunk_size = (y / x);
-    uint64_t* partitions = malloc(x * sizeof(uint64_t));;
     uint64_t count = 0;
 
     // Get stack memory
@@ -325,6 +382,22 @@ int main() {
     pthread_attr_init(&attr);
     pthread_attr_getstacksize(&attr, &stack_size);
     pthread_attr_destroy(&attr);
+
+    if (chunk_size < 2) {
+        x = y/2 - 1;
+        chunk_size = (y / x);
+    }
+    if (x%2) {
+        x--;
+        chunk_size = (y / x);
+    }
+
+    pthread_t threads[x];
+    ThreadData thread_data[x];
+    pthread_mutex_t lock;
+    pthread_mutex_init(&lock, NULL);
+
+    uint64_t* partitions = malloc(x * sizeof(uint64_t));;
 
     partitions[0] = 0;
     for (int i = 1; i <= x; i++) {
@@ -343,44 +416,51 @@ int main() {
     }
     printf("\n");
 
-    start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &start);
     if (y>=2) {
         primes[0] = 2;
         n++;
         if (y!=2) {
             // n = loop_to_y_seq(primes, y);
-            for (int i = 0; i < x; i++) {
-                thread_data[i].stack_size = stack_size;
-                thread_data[i].start = partitions[i];
-                thread_data[i].end = partitions[i+1];
-                thread_data[i].primes = primes;
-                thread_data[i].count = &n;
-                thread_data[i].lock = &lock;
-                thread_data[i].id;
+            if (m==0) {
+                for (int i = 0; i < x; i++) {
+                    thread_data[i].stack_size = stack_size;
+                    thread_data[i].start = partitions[i];
+                    thread_data[i].end = partitions[i+1];
+                    thread_data[i].primes = primes;
+                    thread_data[i].count = &n;
+                    thread_data[i].lock = &lock;
+                    thread_data[i].id;
 
-                pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
-            }
+                    pthread_create(&threads[i], NULL, loop_to_y_thread, &thread_data[i]);
+                }
 
-            for (int i = 0; i < x; i++) {
-                pthread_join(threads[i], NULL);
-                printf("Thread %lu\n", *(thread_data[i].id));
+                for (int i = 0; i < x; i++) {
+                    pthread_join(threads[i], NULL);
+                    // printf("Thread %lu\n", *(thread_data[i].id));
+                }
+            } else {
+                n = check_primes(y, primes);
             }
         }
     }
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
-    end = clock();
-    
-    if (primes[0])
+    if (primes[0] && p==1)
         print_primes(primes, n);
     printf("\n");
 
-    if (primes[0])
-        // print_primes(primes, n);
+    uint64_t elapsed_ns = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
+    double elapsed_s = elapsed_ns / 1e9;
 
-    printf("Execution time: %f\n", ((end - start)) * 1.0 / CLOCKS_PER_SEC);
+    printf("Execution time: %lu ns (%.2f seconds)\n", elapsed_ns, elapsed_s);
 
     if (m==1)
         free(workers);
+    if (p==1) {
+        free(timestamps);
+        free(threadids);
+    }
     free(primes);
     free(partitions);
     pthread_mutex_destroy(&lock);
