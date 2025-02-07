@@ -108,7 +108,7 @@ void print_primes(uint64_t* primes, uint64_t* timestamps, uint64_t* threadids, u
     printf("\n");
     for (uint64_t i=0; i<y; i++) {
         printf("Thread %lu:\t%lu\t(Timestamp: %f seconds)\n",
-                threadids[i], primes[i], timestamps[i] / 1e9);
+               threadids[i], primes[i], timestamps[i] / 1e9);
     }
 }
 
@@ -378,7 +378,6 @@ int main() {
     uint64_t chunk_size = (y / x);
     uint64_t count = 0;
 
-    // Get stack memory
     size_t stack_size;
     pthread_attr_t attr;
     

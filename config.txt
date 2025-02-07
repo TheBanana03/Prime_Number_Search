@@ -1,5 +1,5 @@
 threads=4
-ceiling=10000
-mode=0
+ceiling=100000000
+mode=1
 avx=1
 print=1
