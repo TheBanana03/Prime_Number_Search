@@ -19,6 +19,8 @@ typedef struct {
     uint64_t start;
     uint64_t end;
     uint64_t* primes;
+    uint64_t* timestamps;
+    uint64_t* threadids;
     uint64_t* count;
     pthread_mutex_t* lock;
 } ThreadData;
@@ -104,7 +106,7 @@ void print_primes(uint64_t* primes, uint64_t y) {
     printf("\n%lu primes found", y);
     printf("\n%lu", primes[0]);
     for (uint64_t i=1; i<y; i++) {
-        printf(", %lu", primes[i]);
+        // printf(", %lu", primes[i]);
     }
     printf("\n");
 }
@@ -317,9 +319,12 @@ void* loop_to_y_thread(void* arg) {
         for (uint64_t i=data->start; i<data->end; i+=2) {
             if (find_prime_avx(i))
                 continue;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
             if (p==0) {
-                clock_gettime(CLOCK_MONOTONIC, &ts);
                 printf("Thread %lu:\t%lu\t(Timestamp: %ld.%2ld seconds)\n", pthread_self(), i, ts.tv_sec, ts.tv_nsec);
+            } else if (p==1) {
+                data->threadids[local_count] = *(data->id);
+                data->timestamps[local_count] = (ts.tv_sec - ts.tv_sec) * 1e9 + (ts.tv_nsec - ts.tv_nsec);
             }
             local_primes[local_count++] = i;
         }
@@ -428,6 +433,10 @@ int main() {
                     thread_data[i].start = partitions[i];
                     thread_data[i].end = partitions[i+1];
                     thread_data[i].primes = primes;
+                    if (p==1) {
+                        thread_data[i].timestamps = timestamps;
+                        thread_data[i].threadids = threadids;
+                    }
                     thread_data[i].count = &n;
                     thread_data[i].lock = &lock;
                     thread_data[i].id;

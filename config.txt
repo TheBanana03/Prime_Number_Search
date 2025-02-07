@@ -1,5 +1,5 @@
-threads=2
-ceiling=1000000000
+threads=8
+ceiling=10000000
 mode=0
 avx=1
 print=1
