@@ -105,7 +105,7 @@ void read_config() {
 }
 
 void print_primes(uint64_t* primes, uint64_t* timestamps, uint64_t* threadids, uint64_t y) {
-    printf("\n\n");
+    printf("\n");
     for (uint64_t i=0; i<y; i++) {
         printf("Thread %lu:\t%lu\t(Timestamp: %f seconds)\n",
                 threadids[i], primes[i], timestamps[i] / 1e9);
@@ -305,8 +305,6 @@ void* loop_to_y_thread(void* arg) {
         heap = true;
     }
 
-    // printf("Thread ID: %lu\tStart: %lu\tEnd: %lu\n", pthread_self(), data->start, data->end);
-
     if (a==1) {
         for (uint64_t i=data->start; i<data->end; i+=2) {
             if (find_prime_avx(i))
@@ -320,7 +318,7 @@ void* loop_to_y_thread(void* arg) {
             local_primes[local_count++] = i;
         }
     } else {
-        for (uint64_t i=data->start; i<data->end; i+=2) {
+        for (uint64_t i=data->start; i<=data->end; i+=2) {
             if (find_prime_seq(i))
                 continue;
             if (p==0) {
@@ -333,7 +331,6 @@ void* loop_to_y_thread(void* arg) {
         }
     }
 
-    // Store results in shared array with mutex protection
     pthread_mutex_lock(data->lock);
     for (uint64_t i = 0; i < local_count; i++) {
         data->primes[*(data->count)] = local_primes[i];
@@ -417,10 +414,6 @@ int main() {
         }
     }
     partitions[0] = 3;
-    for (int j = 0; j <= x; j++) {
-        printf("Partition %d: %lu\n", j, partitions[j]);
-    }
-    printf("\n");
 
     clock_gettime(CLOCK_MONOTONIC, &start);
     if (y>=2) {
@@ -436,6 +429,9 @@ int main() {
                 for (int i = 0; i < x; i++) {
                     thread_data[i].stack_size = stack_size;
                     thread_data[i].start = partitions[i];
+                    if (partitions[i+1]==y) {
+                        partitions[i+1]++;
+                    }
                     thread_data[i].end = partitions[i+1];
                     thread_data[i].primes = primes;
                     if (p==1) {
